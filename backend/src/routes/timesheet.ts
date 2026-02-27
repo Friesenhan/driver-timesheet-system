@@ -91,7 +91,6 @@ router.post('/batch-update', async (req: Request, res: Response) => {
     pendingSubmissions = [];
 
     return res.status(200).json({
-      success: true,
       message: `Updated ${result.success} timesheets. ${result.failed} failed. ${result.cancelled.length} codes cancelled (duplicates).`,
       ...result,
     });
