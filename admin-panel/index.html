@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timesheet Dispatcher Panel</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        button {
+            background: #007AFF;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .danger {
+            background: #dc3545;
+        }
+        .danger:hover {
+            background: #c82333;
+        }
+        .success {
+            background: #28a745;
+        }
+        .submissions-list {
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .submission-item {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        .submission-item:last-child {
+            border-bottom: none;
+        }
+        .code {
+            font-weight: bold;
+            color: #007AFF;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Timesheet Dispatcher Panel</h1>
+        
+        <div class="info">
+            <strong>Instructions:</strong><br>
+            1. Enter the Spreadsheet ID for today's spreadsheet<br>
+            2. Share the spreadsheet with the service account email
+                (type "time" and it should show up in list, give editor access, click off "notify                      people")<br>
+            3. Check pending driver submissions below<br>
+            4. Click "Update Spreadsheet" to populate all data at once<br>
+            5. Duplicate codes will be cancelled out (both skipped)<br>
+            6. Thank Cory for ending manual entry!!! Hahaha ;)
+        </div>
+
+        <div class="input-group">
+            <label for="spreadsheetId">Today's Spreadsheet ID *</label>
+            <input type="text" id="spreadsheetId" placeholder="Paste spreadsheet ID here (from Google Sheet URL)">
+            <div class="help-text">Find this in your Google Sheet URL: docs.google.com/spreadsheets/d/[SPREADSHEET_ID]/edit</div>
+        </div>
+
+        <div>
+            <button onclick="loadPending()">Refresh Pending Submissions</button>
+            <button onclick="updateSpreadsheet()" class="success">Update Spreadsheet</button>
+            <button onclick="clearPending()" class="danger">Clear All Pending</button>
+        </div>
+
+        <div id="status" style="margin-top: 20px;"></div>
+        <div id="submissions" class="submissions-list"></div>
+    </div>
+
+    <script>
+        // Update this with your backend URL (use your computer's IP address)
+        const API_URL = 'http://192.168.0.112:3000/api/timesheet';
+const API_KEY = 'timesheet-appAPI_KEY'; // Update this with the API_KEY from your backend .env f
+
+        async function loadPending() {
+            try {
+                const response = await fetch(`${API_URL}/pending`, {
+    headers: {
+        'x-api-key': API_KEY,
+    },
+});
+                const data = await response.json();
+                
+                const submissionsDiv = document.getElementById('submissions');
+                const statusDiv = document.getElementById('status');
+                
+                if (data.count === 0) {
+                    submissionsDiv.innerHTML = '<p>No pending submissions</p>';
+                    statusDiv.innerHTML = '<p style="color: #666;">No submissions waiting</p>';
+                } else {
+                    statusDiv.innerHTML = `<p style="color: #007AFF;"><strong>${data.count} submission(s) pending</strong></p>`;
+                    submissionsDiv.innerHTML = data.submissions.map((sub, index) => `
+                        <div class="submission-item">
+                            <span class="code">${sub.code}</span> - 
+                            Starting KM: ${sub.startingKm || 'N/A'}, 
+                            Shift Start: ${sub.shiftStart || 'N/A'}
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                document.getElementById('status').innerHTML = 
+                    `<p style="color: red;">Error loading submissions: ${error.message}</p>`;
+            }
+        }
+
+       async function updateSpreadsheet() {
+    const statusDiv = document.getElementById('status');
+    const spreadsheetIdInput = document.getElementById('spreadsheetId');
+    
+    if (!spreadsheetIdInput) {
+        statusDiv.innerHTML = '<p style="color: red;">Error: Spreadsheet ID input not found!</p>';
+        return;
+    }
+    
+    const spreadsheetId = spreadsheetIdInput.value.trim();
+    
+    if (!spreadsheetId) {
+        statusDiv.innerHTML = '<p style="color: red;">Please enter a Spreadsheet ID first!</p>';
+        return;
+    }
+    
+    statusDiv.innerHTML = '<p>Updating spreadsheet... Please wait.</p>';
+    
+    try {
+        const response = await fetch(`${API_URL}/batch-update`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': API_KEY,
+            },
+            body: JSON.stringify({
+                spreadsheetId: spreadsheetId
+            }),
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+            statusDiv.innerHTML = `<p style="color: red;">Error: ${response.status} - ${errorData.message || 'Bad Request'}</p>`;
+            return;
+        }
+        
+        const data = await response.json();
+        
+        if (data && data.success) {
+            statusDiv.innerHTML = `
+                <div style="background: #d4edda; padding: 15px; border-radius: 4px; color: #155724;">
+                    <strong>Success!</strong><br>
+                    ${data.message || 'Spreadsheet updated successfully'}<br>
+                    ${data.cancelled && data.cancelled.length > 0 ? `<br><strong>Cancelled codes (duplicates - both skipped):</strong> ${data.cancelled.join(', ')}<br><small>These need to be entered manually.</small>` : ''}
+                </div>
+            `;
+            loadPending();
+        } else {
+            statusDiv.innerHTML = `<p style="color: red;">Error: ${data ? data.message : 'Unknown error occurred'}</p>`;
+        }
+    } catch (error) {
+        console.error('Update error:', error);
+        statusDiv.innerHTML = `<p style="color: red;">Error: ${error.message || 'Failed to update spreadsheet'}</p>`;
+    }
+}
+
+        // Load pending submissions on page load
+        loadPending();
+    </script>
+</body>
+</html>
